@@ -1,13 +1,14 @@
-# llm/llama_client.py
-import os
+# treqai/ai/llama_client.py
+
 from groq import Groq
-from treqai.core.config import GROQ_API_KEY
+from treqai.core.config import settings
 
-client = Groq(api_key=GROQ_API_KEY)
+client = Groq(api_key=settings.GROQ_API_KEY)
 
-MODEL = "llama-3.3-70b-versatile"   # ★ Slack 요약에 가장 추천되는 모델
+MODEL = "llama-3.3-70b-versatile"
 
 async def ask_llama(prompt: str) -> str:
+    
     try:
         response = client.chat.completions.create(
             model=MODEL,
@@ -15,7 +16,9 @@ async def ask_llama(prompt: str) -> str:
             max_tokens=300,
             temperature=0.4,
         )
+        
+        # message는 ChatCompletionMessage 객체!
         return response.choices[0].message.content
 
     except Exception as error:
-        return f"(LLaMA 요약 중 오류 발생 : {error})"
+        return f"(❌ LLaMA 요약 중 오류 발생: {error})"

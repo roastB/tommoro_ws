@@ -1,12 +1,23 @@
-# API Key 관리
-import os
-from dotenv import load_dotenv
+# treqai/core/config.py
 
-load_dotenv()
+from pydantic_settings import BaseSettings
+from pathlib import Path
 
-# API
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+ENV_PATH = BASE_DIR / ".env"
 
-# API Key 체크
-if GROQ_API_KEY is None:
-    print("❌ Warning: GROQ_API_KEY not found. (Llama 기능은 비활성화될 수 있음)")
+class Settings(BaseSettings):
+    SLACK_BOT_TOKEN: str | None = None
+    SLACK_SIGNING_SECRET: str | None = None
+    REQ_TARGET_CHANNEL: str | None = None
+
+    NOTION_API_KEY: str | None = None
+    NOTION_REQUEST_DB_ID: str | None = None
+
+    GROQ_API_KEY: str | None = None
+
+    class Config:
+        env_file = ENV_PATH
+        env_file_encoding = "utf-8"
+
+settings = Settings()
