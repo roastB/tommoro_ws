@@ -1,197 +1,239 @@
 import streamlit as st
 import os
+import json
 from datetime import datetime
 import time
 import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh
 
-# 1. 페이지 설정
-st.set_page_config(page_title="Cell4 Data Monitor", page_icon="📊", layout="wide")
+# --- 1. 페이지 설정 ---
+st.set_page_config(page_title="[β 1.3] Data Collection Monitor", page_icon="🧪", layout="wide")
 
-# 2. CSS 설정
-st.markdown("""
-    <style>
-    .stApp { background-color: #000000 !important; color: #FFFFFF !important; }
-    [data-testid="stSidebar"] { background-color: #1E2130 !important; }
-    header[data-testid="stHeader"] { background-color: #000000 !important; }
-    [data-testid="stToolbar"] { background-color: #000000 !important; color: white !important; }
-    
-    h1, h2, h3, p, span, div, label { color: white !important; }
-    span[data-baseweb="tag"] { background-color: #007AFF !important; color: white !important; }
-    
-    .operator-container {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 8px;
-        margin-top: 15px;
-    }
-    .arm-tag {
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px solid #5AC8FA;
-        padding: 4px 12px;
-        border-radius: 15px;
-        font-size: 14px;
-        font-weight: 500;
-    }
-    .arm-label { color: #5AC8FA !important; font-weight: bold; margin-right: 5px; }
-
-    /* 메인 시간 폰트 - 상단 배너를 위해 마진 조정 */
-    .huge-font {
-        font-size: 140px !important; font-weight: bold; color: #FFFFFF !important;
-        text-align: center; margin-top: 0px; margin-bottom: 0px; line-height: 1;
-    }
-    .goal-font { font-size: 45px !important; color: #FFFFFF !important; vertical-align: middle; }
-    .count-font { font-size: 32px !important; color: #8E8E93 !important; vertical-align: middle; margin-left: 15px; }
-    
-    .sidebar-time {
-        padding: 12px; background-color: #F2F2F7; color: #000000 !important; 
-        border-radius: 8px; margin-bottom: 12px; font-size: 15px; font-weight: bold;
-        border-left: 5px solid #007AFF;
-    }
-    .sidebar-time * { color: #000000 !important; }
-
-    /* 축하 메시지 스타일 (상단용) */
-    .congrats-banner-top {
-        background: linear-gradient(90deg, rgba(48, 209, 88, 0.2), rgba(48, 209, 88, 0.8));
-        padding: 10px;
-        border-radius: 15px;
-        text-align: center;
-        font-weight: bold;
-        font-size: 24px;
-        margin: 10px auto 20px auto;
-        width: 60%;
-        border: 2px solid #30D158;
-        box-shadow: 0 0 20px rgba(48, 209, 88, 0.4);
-        color: white !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# 세션 상태 초기화
-if 'celebrated' not in st.session_state:
-    st.session_state.celebrated = False
-
-# 3. 사이드바 설정
-with st.sidebar:
-    st.header("⚙️ 대시보드 설정")
-    target_hours = st.number_input("오늘의 목표 시간 (Hour)", min_value=0.0, value=0.0, step=0.1, format="%.1f")
-    
-    st.subheader("👥 수집 담당자")
-    operator_list = ["황수범", "정재현", "김민기", "허재훈"]
-    
-    left_operators = st.multiselect("왼팔(Left Arm) 담당", options=operator_list, default=[])
-    right_operators = st.multiselect("오른팔(Right Arm) 담당", options=operator_list, default=[])
-    
-    left_display = ", ".join(left_operators) if left_operators else "미지정"
-    right_display = ", ".join(right_operators) if right_operators else "미지정"
-    
-    st.divider()
-    st.subheader("🕒 수집 시간 기록")
-    sidebar_placeholder = st.empty()
-
-# 4. 메인 타이틀 및 담당자 레이아웃
-col_t1, col_t2 = st.columns([0.6, 0.4])
-with col_t1:
-    st.title("🚀 Cell 4 실시간 수집 현황")
-with col_t2:
-    st.markdown(f"""
-        <div class="operator-container">
-            <div class="arm-tag"><span class="arm-label">L-Arm:</span> {left_display}</div>
-            <div class="arm-tag"><span class="arm-label">R-Arm:</span> {right_display}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-st.divider()
-main_placeholder = st.empty()
-
+# --- 2. 설정 및 데이터 경로 ---
+CONFIG_FILE = "test_dashboard_config.json"
 DATA_PATH = os.path.expanduser("~/data_collection/habilis_dataset_manager/data/raw")
 
-def get_duration_from_yaml(file_path):
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except: pass
+    return {"target_hours": 4.0, "left_operators": [], "right_operators": []}
+
+def save_config():
+    new_conf = {
+        "target_hours": st.session_state.test_target_input,
+        "left_operators": st.session_state.test_left_input,
+        "right_operators": st.session_state.test_right_input,
+    }
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(new_conf, f, ensure_ascii=False)
+
+# --- 세션 초기화 (데이터 캐싱으로 깜빡임 및 중복 방지) ---
+if "test_init" not in st.session_state:
+    saved = load_config()
+    st.session_state.test_target_input = float(saved.get("target_hours", 4.0))
+    st.session_state.test_left_input = saved.get("left_operators", [])
+    st.session_state.test_right_input = saved.get("right_operators", [])
+    st.session_state.test_init = True
+    st.session_state.processed_folders = set()
+    st.session_state.task_stats = {}
+    st.session_state.total_sec = 0.0
+    st.session_state.celebrated = False
+
+# --- 3. 데이터 추출 함수 ---
+def get_folder_data(folder_path):
+    duration, task_name = 0, "Unknown"
+    yaml_path = os.path.join(folder_path, "metadata.yaml")
+    if os.path.exists(yaml_path):
+        try:
+            with open(yaml_path, "r") as f:
+                for line in f:
+                    if "nanoseconds:" in line:
+                        duration = int(line.split(":")[-1].strip()) / 1e9
+                        break
+        except: pass
+    json_path = os.path.join(folder_path, "metacard.json")
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                task_name = json.load(f).get("task_name", "Unknown")
+        except: pass
+    return task_name, duration
+
+def safe_extract_time(folder_name: str) -> str:
     try:
-        with open(file_path, 'r') as f:
-            for line in f:
-                if 'nanoseconds:' in line:
-                    return int(line.split(':')[-1].strip())
+        parts = folder_name.split("_")
+        if len(parts) >= 2 and len(parts[1]) >= 4:
+            return f"{parts[1][:2]}:{parts[1][2:4]}"
     except: pass
-    return 0
+    return "--:--"
 
-# 메인 루프
-while True:
-    try:
-        current_ts = int(time.time())
-        today = datetime.now().strftime("%Y%m%d")
-        all_folders = sorted([f for f in os.listdir(DATA_PATH) if f.startswith(today)]) if os.path.exists(DATA_PATH) else []
-        folder_count = len(all_folders)
-        
-        start_time_str = all_folders[0].split('_')[1] if all_folders else None
-        last_time_str = all_folders[-1].split('_')[1] if all_folders else None
+# --- 4. CSS (담당자 색상 및 카드 디자인) ---
+st.markdown("""
+<style>
+    .stApp { background-color: #000000 !important; color: #FFFFFF !important; }
+    [data-testid="stSidebar"] { background-color: #1E2130 !important; }
+    
+    /* 사이드바 담당자 태그: 파란색 계열 복구 */
+    span[data-baseweb="tag"] { background-color: #007AFF !important; color: white !important; }
+    
+    /* 카드 디자인: 차트를 감싸는 라운드 박스 */
+    [data-testid="stVerticalBlockBorderWrapper"] > div:has(div[data-testid="stVerticalBlock"]) {
+        background-color: #161A25;
+        border: 1px solid #2D3341;
+        border-radius: 20px !important;
+        padding: 20px !important;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+    }
+    
+    .huge-font { font-size: 85px !important; font-weight: bold; text-align: center; line-height: 1; color: #FFFFFF; }
+    .goal-font { font-size: 30px !important; color: #FFFFFF !important; opacity: 0.6; }
+    .count-font { font-size: 20px !important; color: #8E8E93 !important; text-align: center; }
+    
+    .sidebar-time {
+        padding: 10px; background-color: #F2F2F7; color: #000000 !important;
+        border-radius: 8px; margin-bottom: 10px; font-size: 14px; font-weight: bold;
+        border-left: 5px solid #007AFF;
+    }
+    
+    .operator-row { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+    
+    /* 메인 화면 우측 상단 담당자: 흰색 바탕에 검정색 텍스트 */
+    .arm-tag {
+        background-color: #FFFFFF !important; 
+        color: #000000 !important;
+        padding: 6px 16px; 
+        border-radius: 14px; 
+        font-size: 13px; 
+        font-weight: bold;
+        border: 1px solid rgba(0,0,0,0.1);
+        white-space: nowrap;
+    }
+    .arm-label { color: #000000 !important; margin-right: 5px; opacity: 0.6; }
+</style>
+""", unsafe_allow_html=True)
 
-        durations = [get_duration_from_yaml(os.path.join(DATA_PATH, f, "metadata.yaml")) for f in all_folders if os.path.exists(os.path.join(DATA_PATH, f, "metadata.yaml"))]
-        total_seconds = sum(durations) / 1e9
-        avg_duration_sec = (total_seconds / len(durations)) if durations else 0
-        
-        duration_str = f"{int(total_seconds//3600):02d}:{int((total_seconds%3600)//60):02d}:{int(total_seconds%60):02d}"
-        target_seconds = target_hours * 3600
-        progress_val = min(total_seconds / target_seconds, 1.0) if target_seconds > 0 else 0.0
+# --- 5. 사이드바 ---
+with st.sidebar:
+    st.header("🧪 테스트 설정")
+    st.number_input("Target Hours", min_value=0.0, step=0.1, format="%.1f", key="test_target_input", on_change=save_config)
+    ops_list = ["황수범", "정재현", "김민기", "허재훈"]
+    st.multiselect("Left Arm Operator", options=ops_list, key="test_left_input", on_change=save_config)
+    st.multiselect("Right Arm Operator", options=ops_list, key="test_right_input", on_change=save_config)
+    st.divider()
+    sidebar_placeholder = st.empty()
 
-        # 사이드바 업데이트
-        with sidebar_placeholder.container():
-            st.markdown(f'<div class="sidebar-time">🔥 최근 수집: {last_time_str[:2]}:{last_time_str[2:4] if last_time_str else "--"}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="sidebar-time">📊 평균 수집: {int(avg_duration_sec//60):02d}:{int(avg_duration_sec%60):02d}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="sidebar-time">🛫 첫 수집: {start_time_str[:2]}:{start_time_str[2:4] if start_time_str else "--"}</div>', unsafe_allow_html=True)
+# --- 6. 데이터 로직 및 렌더링 ---
+try:
+    today = datetime.now().strftime("%Y%m%d")
+    all_folders = sorted([f for f in os.listdir(DATA_PATH) if f.startswith(today)]) if os.path.exists(DATA_PATH) else []
+    
+    # 신규 데이터 캐싱 및 Unknown 필터링
+    new_folders = [f for f in all_folders if f not in st.session_state.processed_folders]
+    for f_name in new_folders:
+        task, sec = get_folder_data(os.path.join(DATA_PATH, f_name))
+        if task != "Unknown":
+            st.session_state.task_stats[task] = st.session_state.task_stats.get(task, 0) + sec
+            st.session_state.total_sec += sec
+        st.session_state.processed_folders.add(f_name)
 
-        # 시스템 정보
-        df_output = os.popen("df -h / | tail -1").read().split()
-        avail_gb = df_output[3] if len(df_output) > 3 else "N/A"
-        used_percent = int(df_output[4].replace('%','')) if len(df_output) > 4 else 0
+    conf = load_config()
+    t_hours = float(conf.get("target_hours", 0.0))
+    l_ops, r_ops = ", ".join(conf.get("left_operators", [])) or "미지정", ", ".join(conf.get("right_operators", [])) or "미지정"
+    total_hours = st.session_state.total_sec / 3600.0
+    progress_pct = int((st.session_state.total_sec / (t_hours * 3600)) * 100) if t_hours > 0 else 0
 
-        # 메인 영역
-        with main_placeholder.container():
-            # 1. 상단 축하 배너 (달성 시 최상단 노출)
-            if progress_val >= 1.0 and target_hours > 0:
-                st.markdown('<div class="congrats-banner-top">🎉 오늘 목표 달성! 모두 고생하셨습니다!</div>', unsafe_allow_html=True)
-                if not st.session_state.celebrated:
-                    st.balloons()
-                    st.session_state.celebrated = True
-            elif progress_val < 1.0:
-                st.session_state.celebrated = False
+    # 사이드바 텍스트 업데이트 (깜빡임 방지)
+    avg_sec = (st.session_state.total_sec / len(all_folders)) if all_folders else 0.0
+    start_t = safe_extract_time(all_folders[0]) if all_folders else "--:--"
+    last_t = safe_extract_time(all_folders[-1]) if all_folders else "--:--"
+    sidebar_html = f"""
+        <div class="sidebar-time">🔥 Last Collection: {last_t}</div>
+        <div class="sidebar-time">📊 Average Time: {int(avg_sec//60):02d}:{int(avg_sec%60):02d}</div>
+        <div class="sidebar-time">🌞 First Collection: {start_t}</div>
+    """
+    sidebar_placeholder.markdown(sidebar_html, unsafe_allow_html=True)
 
-            # 2. 메인 수집 시간
-            st.markdown(f'<p class="huge-font">{duration_str} <span class="goal-font">/ {target_hours:.1f}h 목표</span> <span class="count-font">({folder_count} 개)</span></p>', unsafe_allow_html=True)
+    # 상단 헤더 (담당자 흰색 태그 적용)
+    col_h1, col_h2 = st.columns([0.65, 0.35])
+    with col_h1: st.title("🧪 Data Collection Status (v1.3)")
+    with col_h2: 
+        st.markdown(f'<div class="operator-row"><div class="arm-tag"><span class="arm-label">L-Arm:</span>{l_ops}</div><div class="arm-tag"><span class="arm-label">R-Arm:</span>{r_ops}</div></div>', unsafe_allow_html=True)
+
+    if progress_pct >= 100 and t_hours > 0 and not st.session_state.celebrated:
+        st.balloons(); st.session_state.celebrated = True
+
+    # --- 메인 그리드 레이아웃 (좌 7 : 우 3) ---
+    col_left, col_right = st.columns([0.7, 0.3], gap="medium")
+
+    with col_left:
+        # 섹션 1: 실시간 수집 현황 (라운드 카드 박스)
+        with st.container(border=True):
+            duration_str = f"{int(st.session_state.total_sec//3600):02d}:{int((st.session_state.total_sec%3600)//60):02d}:{int(st.session_state.total_sec%60):02d}"
+            st.markdown(f'<p class="huge-font">{duration_str} <span class="goal-font">/ {t_hours}h</span></p>', unsafe_allow_html=True)
+            st.markdown(f'<p class="count-font">현재 {len(all_folders)}개 데이터 수집 완료</p>', unsafe_allow_html=True)
             
-            # Gauge Chart
             fig_gauge = go.Figure(go.Indicator(
-                mode = "gauge",
-                value = total_seconds / 3600,
-                gauge = {
-                    'axis': {'range': [None, max(target_hours, 1)], 'tickcolor': "white"},
-                    'bar': {'color': "#5AC8FA"},
-                    'bgcolor': "rgba(255,255,255,0.05)",
-                    'threshold': {'line': {'color': "#FF3B30", 'width': 5}, 'value': target_hours if target_hours > 0 else 0.001}
+                mode="gauge+number", value=total_hours,
+                number={"font": {"color": "#FFFFFF", "size": 20}, "suffix": "h"},
+                gauge={
+                    "axis": {"range": [0, max(t_hours, 1)], "tickcolor": "white"},
+                    "bar": {"color": "#5AC8FA"},
+                    "bgcolor": "rgba(255,255,255,0.05)",
+                    "threshold": {"line": {"color": "white", "width": 4}, "value": t_hours if t_hours > 0 else 0.001}
                 }
             ))
-            fig_gauge.update_layout(height=280, margin=dict(t=0, b=10, l=100, r=100), paper_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig_gauge, width='stretch', key=f"gauge_{current_ts}")
+            fig_gauge.update_layout(height=260, margin=dict(t=0, b=10, l=50, r=50), paper_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(fig_gauge, width='stretch', key="gauge")
 
-            col_left, col_right = st.columns(2)
-            with col_left:
-                st.subheader("💾 디스크 상태 (Storage)")
-                fig_disk = go.Figure(go.Pie(values=[used_percent, 100-used_percent], hole=.78, marker_colors=['#FF453A', '#2C2C2E'], textinfo='none', sort=False))
-                fig_disk.add_annotation(text=f"<span style='color:#FF453A; font-size:35px; font-weight:bold;'>{used_percent}%</span><br><span style='font-size:12px; color:gray;'>{avail_gb} 여유</span>", showarrow=False)
-                fig_disk.update_layout(showlegend=False, height=350, margin=dict(t=20, b=20), paper_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_disk, width='stretch', key=f"disk_{current_ts}")
+        # 섹션 2: 하단 보조 지표 (디스크 & 달성률)
+        col_s1, col_s2 = st.columns(2, gap="medium")
+        with col_s1:
+            with st.container(border=True):
+                st.subheader("💾 Disk Usage")
+                df_out = os.popen("df -h / | tail -1").read().split()
+                used_p = int(df_out[4].replace("%", "")) if len(df_out) > 4 else 0
+                fig_disk = go.Figure(go.Pie(values=[used_p, 100-used_p], hole=0.75, marker_colors=["#FF3B30", "#1C1C1E"], textinfo="none"))
+                fig_disk.add_annotation(text=f"{used_p}%", showarrow=False, font=dict(size=30, color="#FF3B30", weight="bold")) 
+                fig_disk.update_layout(height=200, margin=dict(t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", showlegend=False)
+                st.plotly_chart(fig_disk, width='stretch', key="disk")
+        with col_s2:
+            with st.container(border=True):
+                st.subheader("📈 Overall Achievement")
+                prog_val = min(progress_pct, 100)
+                fig_prog = go.Figure(go.Pie(values=[prog_val, 100-prog_val], hole=0.75, marker_colors=["#32D74B", "#1C1C1E"], textinfo="none"))
+                fig_prog.add_annotation(text=f"{progress_pct}%", showarrow=False, font=dict(size=30, color="#32D74B", weight="bold")) 
+                fig_prog.update_layout(height=200, margin=dict(t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", showlegend=False)
+                st.plotly_chart(fig_prog, width='stretch', key="prog")
 
-            with col_right:
-                st.subheader("📈 시간 달성률")
-                pct = int(progress_val * 100)
-                fig_prog = go.Figure(go.Pie(values=[pct, 100-pct], hole=.78, marker_colors=['#30D158', '#1C1C1E'], textinfo='none', sort=False))
-                fig_prog.add_annotation(text=f"<span style='color:#30D158; font-size:50px; font-weight:bold;'>{pct}%</span>", showarrow=False)
-                fig_prog.update_layout(showlegend=False, height=350, margin=dict(t=20, b=20), paper_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_prog, width='stretch', key=f"prog_{current_ts}")
-            
-            st.markdown(f"<p style='text-align:right; color:#8E8E93; font-size:12px; margin-top:20px;'>최종 동기화: {datetime.now().strftime('%H:%M:%S')}</p>", unsafe_allow_html=True)
+    with col_right:
+        # 섹션 3: Task Breakdown (라운드 카드 박스)
+        with st.container(border=True):
+            st.markdown("### 📊 Task Breakdown")
+            sorted_tasks = sorted(st.session_state.task_stats.items(), key=lambda x: x[1], reverse=True)
+            if sorted_tasks:
+                # 데이터가 많은 순서대로 빨강 > 녹색 > 하늘색 할당
+                rank_colors = ["#FF2D55", "#32D74B", "#5AC8FA", "#AF52DE", "#FF9500"]
+                fig_donut = go.Figure(go.Pie(
+                    labels=[t[0] for t in sorted_tasks], values=[t[1] for t in sorted_tasks], hole=0.55,
+                    marker=dict(colors=rank_colors), textinfo="percent",
+                    textfont=dict(size=15, color="white", family="Arial Black"), # 흰색 Bold %
+                    sort=False
+                ))
+                fig_donut.update_layout(height=300, margin=dict(t=20, b=20, l=0, r=0), showlegend=True, 
+                                        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+                                        paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig_donut, width='stretch', key="donut")
+                
+                st.divider()
+                # 시간이 많은 순서대로 메트릭 정렬 출력
+                for name, sec in sorted_tasks:
+                    st.metric(label=f"📍 {name}", value=f"{sec/3600:.2f} h", delta=f"{int(sec//60)} min")
+            else: st.info("데이터 수집 중...")
 
-    except Exception as e:
-        st.error(f"Error: {e}")
-    
-    time.sleep(2.5)
+except Exception as e: st.error(f"Error: {e}")
+
+# --- 7. 자동 새로고침 ---
+st_autorefresh(interval=3000, key="refresh")
